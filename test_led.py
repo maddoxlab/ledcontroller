@@ -21,9 +21,8 @@ parser.add_argument("--port", type=int, default=5005)
 args = parser.parse_args()
 
 client = udp_client.SimpleUDPClient(args.ip, args.port)
-bundle = osc_bundle_builder.OscBundleBuilder(osc_bundle_builder.IMMEDIATELY)
 
-dots = DotStrip(client, bundle, n_led)
+dots = DotStrip(client, n_led)
 with ExperimentController('test_led', output_dir=None, version='dev', 
                           participant='foo', session='foo', 
                           full_screen=False) as ec:
