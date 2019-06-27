@@ -27,20 +27,29 @@ class DotStrip:
         
     n_leds : int
         Number of LEDs in the strip
+    packet_size : int
+        Number of floats to send in each OSC message -- must be lower than 1634
     Returns
     -------
     dotstrip : instance of DotStrip
         The dotstrip object.
     """
 
-    def __init__(self, client, n_leds):
+    def __init__(self, client, n_leds, packet_size=1500):
         if not isinstance(n_leds, int):
             raise ValueError('n_leds must be type int')
+        if not isinstance(packet_size, int):
+            raise ValueError('packet_size must be type int')
         self._n_leds = n_leds
+        if packet_size > 1634:
+            raise ValueError('packet_size must be less than 1634')
         self._client = client
         self._colors = np.zeros((n_leds, 4))
         self._pre_buffer = np.zeros((n_leds, 4))
         self._buffer = self._make_bytes(self._colors)
+        self._packet_size = packet_size
+        self._n_segments = int(np.ceil(len(self._buffer) / self._packet_size))
+        self._osc = False
 
 
     def _make_pixel(self, colors):
@@ -84,7 +93,14 @@ class DotStrip:
     def _gamma_correct(self, x):
         coefs = np.array([ 0.7862484 ,  0.24822052, -0.03472465,  0.00123544])
         return np.maximum(np.minimum(np.polyval(coefs, x) - .003, 1), 0)
-
+    
+    def init_osc(self):
+        """Send dot params to server"""
+        self._client.send_message("/led_init", [self._n_leds,
+                                                self._packet_size,
+                                                self._n_segments,
+                                                len(self._buffer)])
+        self._osc = True
 
     def clear_strip(self):
         """Zero the LED buffer"""
@@ -94,7 +110,14 @@ class DotStrip:
 
     def send(self):
         """Execute LED OSC command"""
-        self._client.send_message("/led", [float(b) for b in self._buffer])
+        import array
+        for i in np.arange(self._n_segments):
+            start = i * self._packet_size
+            stop = start + self._packet_size
+            self._client.send_message("/led_{}".format(i),
+                                      array.array('f', self._buffer[start:stop]))
+        if not self._osc:
+            raise ValueError('Must run init_osc method first.')
 
 
 class _LightShape(object):
