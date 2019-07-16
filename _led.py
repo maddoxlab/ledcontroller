@@ -49,7 +49,7 @@ class DotStrip:
         self._buffer = self._make_bytes(self._colors)
         self._packet_size = packet_size
         self._n_segments = int(np.ceil(len(self._buffer) / self._packet_size))
-        self._osc = False
+        self._tcp = False
 
 
     def _make_pixel(self, colors):
@@ -81,7 +81,7 @@ class DotStrip:
 
     def _make_bytes(self, colors):
         start = [np.uint8(0)] * 4
-        end = [np.uint8(255)] * int(np.ceil(len(colors) / 16.))
+        end = [np.uint8(0)] * int(np.ceil((len(colors) / 2. + 1) / 8.))
         # end = [np.uint8(0)] * 4 * 4
 
         pixels = []
@@ -95,12 +95,12 @@ class DotStrip:
         return np.maximum(np.minimum(np.polyval(coefs, x) - .003, 1), 0)
     
     def init_osc(self):
-        """Send dot params to server"""
-        self._client.send_message("/led_init", [self._n_leds,
-                                                self._packet_size,
-                                                self._n_segments,
-                                                len(self._buffer)])
-        self._osc = True
+        #        """Send dot params to server"""
+        #        self._client.send_message("/led_init", [self._n_leds,
+        #                                                self._packet_size,
+        #                                                self._n_segments,
+        #                                                len(self._buffer)])
+        self._tcp = True
 
     def clear_strip(self):
         """Zero the LED buffer"""
@@ -110,13 +110,13 @@ class DotStrip:
 
     def send(self):
         """Execute LED OSC command"""
-        import array
-        for i in np.arange(self._n_segments):
-            start = i * self._packet_size
-            stop = start + self._packet_size
-            self._client.send_message("/led_{}".format(i),
-                                      array.array('f', self._buffer[start:stop]))
-        if not self._osc:
+        import time
+        start = time.time()
+        self._client.sendall(bytes(self._buffer))
+        #received = self._client.recv(65536)
+        #print('Received ', len(received), ' bytes')
+        #print((time.time() - start) * 1e3)
+        if not self._tcp:
             raise ValueError('Must run init_osc method first.')
 
 
