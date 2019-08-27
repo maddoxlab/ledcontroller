@@ -5,14 +5,11 @@ Created on Fri May 31 10:37:22 2019
 @author: mcappelloni
 """
 from _led import (DotStrip, _LightShape, Dot, Line, Gaussian, Tukey, PixelArray)
-import argparse
-import numpy as np 
-from pythonosc import udp_client, osc_bundle_builder
+import numpy as np
 import matplotlib.pyplot as plt
 from expyfun import ExperimentController
-do_full = False
-do_single = True
-n_led = 1110
+
+n_led = 1091
 
 import socket
 HOST = '169.254.150.219'  # The server's hostname or IP address
@@ -25,12 +22,25 @@ dots = DotStrip(client, n_led)
 with ExperimentController('test_led', output_dir=None, version='dev', 
                           participant='foo', session='foo', 
                           full_screen=False) as ec:
-    dots.init_osc()
     dots.clear_strip()
     dots.send()
     
+    # %%%%%%%%%%%%%%%
+    test_holes = [Dot(ec, dots, 4 * [.5], int(i), 'deg') for i in np.arange(-102, 103, 4)]
+    [t.draw() for t in test_holes]
+    dots.send()
+    ec.screen_prompt('Lights will line up with between speaker holes')
+    dots.clear_strip()
+    dots.send()
+    ec.wait_secs(1)
+    test_center = [Dot(ec, dots, 4 * [.5], int(dots.get_speaker_location(i, 'deg')), 'deg') for i in range(53)]
+    [t.draw() for t in test_center]
+    dots.send()
+    ec.screen_prompt('Lights will line up with center of speakers')
+    # %%%%%%%%%%%%%%%
     ec.screen_prompt('There are three blending modes')
-    
+    dots.clear_strip()
+    dots.send()
     blend1 = Gaussian(ec, dots, [.4, .8, 0, .3], 600, 10)
     blend1.draw()
     dots.send()

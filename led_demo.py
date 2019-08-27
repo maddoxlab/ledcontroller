@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from expyfun import ExperimentController
 do_full = False
 do_single = True
-n_led = 1110
+n_led = 1091
 
 import socket
 HOST = '169.254.150.219'  # The server's hostname or IP address
@@ -34,25 +34,26 @@ with ExperimentController('test_led', output_dir=None, version='dev',
                     + modes[2] + ' (4) ' + modes[3] + ' (5) ' + modes[4] + ' (6) EXIT')
     pressed = ec.screen_prompt(instructions)
     
-    x_half = np.concatenate((np.arange(300, 792), 792 * np.ones((5, )), np.flipud(np.arange(300, 792)), 300 * np.ones((5, ))), 0)
+    x_half = np.concatenate((np.arange(300, 850), 850 * np.ones((5, )), np.flipud(np.arange(300, 850)), 300 * np.ones((5, ))), 0)
     x_range = np.concatenate((x_half, np.flipud(x_half)), 0)
     cylon = [Dot(ec, dots, [1, 0, 0, .7], int(x)) for x in x_range]
     cm = plt.get_cmap('hsv')
     colors = cm(np.linspace(0, 1, 150, dtype=float))
     colors[:, -1] = .4 
     full_rainbow = [Line(ec, dots, c, [0, n_led - 1]) for c in colors]
-    cm = plt.get_cmap('winter')
+    cm = plt.get_cmap('summer')
     colors = cm(np.linspace(0, 1, n_led // 2, dtype=float))
     colors = np.concatenate((colors, np.flipud(colors)), 0)
-    colors[:, -1] *= .4
+    colors[:, -1] *= .3
     gradient = [PixelArray(ec, dots, np.roll(colors, shift, 0), [0, n_led - 1]) for shift in np.arange(0, 1109, 5)]
     cm = plt.get_cmap('gray')
     colors = cm(np.linspace(0, 1, 20, dtype=float))
     colors[:, -1] *= .5
-    model_train = [[Dot(ec, dots, c, (x + shift) % 1109) for shift, c in enumerate(colors)] for x in range(1109)]
+    model_train = [[Dot(ec, dots, c, (x + shift) % n_led) for shift, c in enumerate(colors)] for x in range(n_led - 1)]
     colors = np.random.rand(100, 1109, 4)
-    colors[:, :, -1] = .4
-    noise = [PixelArray(ec, dots, c, [0, n_led - 1]) for c in colors]
+    colors[:, :, -1] = .2
+#    noise = [PixelArray(ec, dots, c, [0, n_led - 1]) for c in colors]
+    noise = 0
     all_stim = [full_rainbow, gradient, model_train, cylon, noise]
     ec.listen_presses()
     ec.screen_text(instructions)
@@ -66,7 +67,7 @@ with ExperimentController('test_led', output_dir=None, version='dev',
                 [ss.draw() for ss in s]
             else:
                 s.draw('occlude')
-            ec.wait_until(start + .005)
+            ec.wait_until(start + .01)
             dots.send()
             start = ec.current_time
             dots.clear_strip()

@@ -35,7 +35,7 @@ class DotStrip:
         The dotstrip object.
     """
 
-    def __init__(self, client, n_leds, packet_size=1500):
+    def __init__(self, client, n_leds, offset=False, packet_size=1500):
         if not isinstance(n_leds, int):
             raise ValueError('n_leds must be type int')
         if not isinstance(packet_size, int):
@@ -50,6 +50,7 @@ class DotStrip:
         self._packet_size = packet_size
         self._n_segments = int(np.ceil(len(self._buffer) / self._packet_size))
         self._tcp = False
+        self._offset = offset
 
 
     def _make_pixel(self, colors):
@@ -66,11 +67,10 @@ class DotStrip:
         c_max = 255
         g_max = 2 ** 5 - 2
         
-        g = np.ceil(colors[:, :3].max(1) * g_max).astype(np.uint8)
+        g = np.ceil(colors[:, :3].max(1) * g_max / c_max).astype(np.uint8)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            c = np.round(c_max * colors / g[:, np.newaxis] \
-                    * g_max).astype(np.uint8)
+            c = np.round(colors / g[:, np.newaxis]).astype(np.uint8)
 
         bright = np.uint8(g + int('11100000', 2))
         colors = np.concatenate((bright[:, np.newaxis], 
@@ -82,7 +82,6 @@ class DotStrip:
     def _make_bytes(self, colors):
         start = [np.uint8(0)] * 4
         end = [np.uint8(0)] * int(np.ceil((len(colors) / 2. + 1) / 8.))
-        # end = [np.uint8(0)] * 4 * 4
 
         pixels = []
         pixels = self._make_pixel(colors)
@@ -91,16 +90,33 @@ class DotStrip:
 
 
     def _gamma_correct(self, x):
-        coefs = np.array([ 0.7862484 ,  0.24822052, -0.03472465,  0.00123544])
-        return np.maximum(np.minimum(np.polyval(coefs, x) - .003, 1), 0)
-    
-    def init_osc(self):
-        #        """Send dot params to server"""
-        #        self._client.send_message("/led_init", [self._n_leds,
-        #                                                self._packet_size,
-        #                                                self._n_segments,
-        #                                                len(self._buffer)])
-        self._tcp = True
+        
+        ref_vals = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                             0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                             1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3,
+                             3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5,
+                             6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 9, 9,
+                             9, 10, 10, 10, 11, 11, 11, 12, 12, 13, 13, 13, 
+                             14, 14, 15, 15, 16, 16, 17, 17, 18, 18, 19, 19, 
+                             20, 20, 21, 21, 22, 22, 23, 24, 24, 25, 25, 26,
+                             27, 27, 28, 29, 29, 30, 31, 32, 32, 33, 34, 35, 
+                             35, 36, 37, 38, 39, 39, 40, 41, 42, 43, 44, 45, 
+                             46, 47, 48, 49, 50, 50, 51, 52, 54, 55, 56, 57, 
+                             58, 59, 60, 61, 62, 63, 64, 66, 67, 68, 69, 70, 
+                             72, 73, 74, 75, 77, 78, 79, 81, 82, 83, 85, 86, 
+                             87, 89, 90, 92, 93, 95, 96, 98, 99, 101, 102, 104, 
+                             105, 107, 109, 110, 112, 114, 115, 117, 119, 120, 
+                             122, 124, 126, 127, 129, 131, 133, 135, 137, 138, 
+                             140, 142, 144, 146, 148, 150, 152, 154, 156, 158, 
+                             160, 162, 164, 167, 169, 171, 173, 175, 177, 180, 
+                             182, 184, 186, 189, 191, 193, 196, 198, 200, 203,
+                             205, 208, 210, 213, 215, 218, 220, 223, 225, 228,
+                             231, 233, 236, 239, 241, 244, 247, 249, 252, 255])
+#        coefs = np.array([ 0.7862484 ,  0.24822052, -0.03472465,  0.00123544])
+#        return np.maximum(np.minimum(np.polyval(coefs, x) - .003, 1), 0)
+        return ref_vals[np.array(np.ceil(x * 255), dtype=int)]
+
 
     def clear_strip(self):
         """Zero the LED buffer"""
@@ -110,15 +126,53 @@ class DotStrip:
 
     def send(self):
         """Execute LED OSC command"""
-        import time
-        start = time.time()
         self._client.sendall(bytes(self._buffer))
-        #received = self._client.recv(65536)
-        #print('Received ', len(received), ' bytes')
-        #print((time.time() - start) * 1e3)
-        if not self._tcp:
-            raise ValueError('Must run init_osc method first.')
+            
+        
+    def convert_units(self, pos, fro, to):
+        """Convert units of LED index to degrees azimuth
+        
+        Parameters
+        ----------
+        pos : int or list or 1D array
+            positions in either int or deg
+        fro : str
+            the units of pos -- either 'int' or 'deg'
+        to : str
+            the desired units -- either 'int' or 'deg'
+        """
 
+        calibration_inds = [246, 493, 740, 1008]
+        calibration_deg = [58, 10, -38, -90]
+        if isinstance(pos, int):
+            pos = [pos]
+        if fro == 'ind' and to == 'deg':        
+            if self._offset:
+                fit = np.polyfit(calibration_inds, np.array(calibration_deg) + 2, 1)
+            else:
+                fit = np.polyfit(calibration_inds, calibration_deg, 1)
+        elif fro == 'deg' and to == 'ind':
+            if self._offset:
+                fit = np.polyfit(np.array(calibration_deg) + 2, calibration_inds, 1)
+            else:
+                fit = np.polyfit(calibration_deg, calibration_inds, 1)
+        else:
+            raise ValueError('fro and to must be "ind" and "deg", "deg"'
+                             'and "ind" or "deg"')
+        return [np.polyval(fit, p) for p in pos]
+    
+    def get_nearest_speaker(self, azimuth, units):    
+        if units == 'ind':
+            azimuth = self.convert_units(azimuth, 'ind', 'deg')
+        if units == 'deg' and self._offset:
+            azimuth -= 2
+        return int(azimuth / 4 + 26)
+    
+    def get_speaker_location(self, speaker_ind, to_units):
+        azimuth = (speaker_ind - 26) * 4
+        if to_units == 'ind':
+            azimuth = self.convert_units(azimuth, 'deg', 'ind')
+        return azimuth
 
 class _LightShape(object):
     """Super class for led objects"""
@@ -144,6 +198,7 @@ class _LightShape(object):
             'max' : show whichever object is brighter
             'occlude' : add opaque object on top of existing objects
         """
+
         if blend_mode == 'add':
             self._led._colors += self._colors
             if any(self._led._colors.ravel() > 1):
@@ -161,7 +216,7 @@ class _LightShape(object):
         self._led._buffer = \
             self._led._make_bytes(np.minimum(1, self._led._colors))
         self._led._pre_buffer = np.zeros((self._led._pre_buffer.shape))
-    
+
 
 class Dot(_LightShape):
     """A single LED
@@ -184,16 +239,16 @@ class Dot(_LightShape):
         The dot object.
     """
 
-
     def __init__(self, ec, led, color, pos, units='ind'):
         _LightShape.__init__(self, ec, led, color)
         
         if units == 'ind':
             assert(isinstance(pos, int))
-            self._colors[pos] = color
-            
+        elif units == 'deg':
+            pos = int(np.round(self._led.convert_units(pos, 'deg', 'ind')[0]))
         else:
-            print('nice try')
+            raise ValueError('units must be either "ind" or "deg"')
+        self._colors[pos] = color
 
 
 class Line(_LightShape):
@@ -217,17 +272,15 @@ class Line(_LightShape):
         The line object.
     """
 
-
     def __init__(self, ec, led, color, pos, units='ind'):
         _LightShape.__init__(self, ec, led, color)
         if pos[0] > pos[1]:
             raise ValueError('Position must be specified as [start, stop]')
-        
-        if units == 'ind':
-            self._colors[pos[0]:pos[1]] = color
-            
-        else:
-            print('nice try')
+        if units == 'deg':
+            pos = np.array(np.round(self._led.convert_units(pos, 'deg', 'ind')),
+                           dtype=int)
+            pos = np.flip(pos, 0)
+        self._colors[pos[0]:pos[1]] = color
 
 
 class Gaussian(_LightShape):
@@ -256,22 +309,21 @@ class Gaussian(_LightShape):
         The gaussian object.
     """
 
-
     def __init__(self, ec, led, color, pos, width, units='ind', threshold=0.2):
         _LightShape.__init__(self, ec, led, color)
         
-        if units == 'ind':
-            colors = np.ones(self._led._colors.shape) * color
-            x = np.arange(self._led._n_leds)
-            env = np.exp(-np.power(x - pos, 2.) / (2 * np.power(width, 2.)))
-            env[env < threshold] = 0
-            colors[:, -1] *= env
-            colors[env < threshold] = 0
-            self._colors = colors
-            
-        else:
-            print('nice try')
-            
+        if units == 'deg':
+            pos = self._led.convert_units(pos, 'deg', 'ind')[0]
+            width = np.abs(self._led.convert_units(width, 'deg', 'ind')[0] - 
+                           self._led._n_leds // 2)
+        colors = np.ones(self._led._colors.shape) * color
+        x = np.arange(self._led._n_leds)
+        env = np.exp(-np.power(x - pos, 2.) / (2 * np.power(width, 2.)))
+        env[env < threshold] = 0
+        colors[:, -1] *= env
+        colors[env < threshold] = 0
+        self._colors = colors
+
 
 class Tukey(_LightShape):
     """A bar of LEDs with Tukey window envelope
@@ -297,21 +349,21 @@ class Tukey(_LightShape):
     tukey : instance of Tukey
         The tukey object. 
     """
-    
+
     def __init__(self, ec, led, color, pos, width, alpha, units='ind'):
         _LightShape.__init__(self, ec, led, color)
         from scipy.signal import tukey
-        if units == 'ind':
-            colors = np.ones((width, 4)) * color
-            win = tukey(width, alpha)
-            start = int(pos - width/2)
-            stop = start + width
-            colors[:, -1] *= win
-            self._colors[start:stop] = colors
+        if units == 'deg':
+            pos = self._led.convert_units([pos], 'deg', 'ind')[0]
+            width = np.abs(self._led.convert_units(width, 'deg', 'ind')[0] - 
+                           self._led._n_leds // 2)
+        colors = np.ones((int(width), 4)) * color
+        win = tukey(int(width), alpha)
+        start = int(pos - width/2)
+        stop = int(start + width)
+        colors[:, -1] *= win
+        self._colors[start:stop] = colors
 
-        else:
-            print('nice try')
-            
 
 class PixelArray():
     """Set arbitray pixel colors
@@ -337,17 +389,18 @@ class PixelArray():
     pixelarray : instance of PixelArray
         The pixelarray object. 
     """
-    
 
-    def __init__(self, ec, led, colors, extent):
-        from scipy.signal import resample
+    def __init__(self, ec, led, colors, extent, units='ind'):
+        from scipy.interpolate import CubicSpline
         self._ec = ec
         self._led = led
         if colors.shape[-1] != 4:
             raise ValueError('Must specify RGBA colors')
+        if units == 'deg':
+            extent = self._led.convert_units(extent, 'deg', 'ind')
         if np.diff(extent) != colors.shape[0]:
-            colors = resample(colors, int(np.diff(extent)))
-            
+            cs = CubicSpline(np.arange(len(colors)), colors)
+            colors = cs(np.arange(self._led._n_leds) / len(colors))
         self._colors = np.zeros(self._led._colors.shape)
         self._colors[extent[0]:extent[1]] = colors
 
